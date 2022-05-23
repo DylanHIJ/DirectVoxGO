@@ -122,8 +122,6 @@ def load_data(args):
 
         near, far = inward_nearfar_heuristic(poses[i_train, :3, 3], ratio=0)
         assert images.shape[-1] == 3
-        exit(0)
-
     else:
         raise NotImplementedError(f'Unknown dataset type {args.dataset_type} exiting')
 
