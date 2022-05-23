@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 from lib import utils, dvgo, dmpigo
 from lib.load_data import load_data
+from lib.extract_mesh import extract_mesh
 
 
 def config_parser():
@@ -592,6 +593,9 @@ if __name__=='__main__':
     if args.render_test:
         testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_test_{ckpt_name}')
         os.makedirs(testsavedir, exist_ok=True)
+
+        extract_mesh(savedir=testsavedir, **render_viewpoints_kwargs)
+
         rgbs, depths = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_test']],
                 HW=data_dict['HW'][data_dict['i_test']],
