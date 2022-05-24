@@ -189,14 +189,13 @@ def compute_bbox_by_coarse_geo(model_class, model_path, thres):
     eps_time = time.time()
     model = utils.load_model(model_class, model_path)
     interp = torch.stack(torch.meshgrid(
-        torch.linspace(0, 1, model.density.shape[2]),
-        torch.linspace(0, 1, model.density.shape[3]),
-        torch.linspace(0, 1, model.density.shape[4]),
+        torch.linspace(0, 1, model.sdf.shape[2]),
+        torch.linspace(0, 1, model.sdf.shape[3]),
+        torch.linspace(0, 1, model.sdf.shape[4]),
     ), -1)
     dense_xyz = model.xyz_min * (1-interp) + model.xyz_max * interp
-    density = model.grid_sampler(dense_xyz, model.density)
-    alpha = model.activate_density(density)
-    mask = (alpha > thres)
+    sdf = model.grid_sampler(dense_xyz, model.sdf)
+    mask = torch.ones_like(sdf, dtype=torch.bool)
     active_xyz = dense_xyz[mask]
     xyz_min = active_xyz.amin(0)
     xyz_max = active_xyz.amax(0)
@@ -326,7 +325,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
                     irregular_shape=data_dict['irregular_shape'])
             optimizer.set_pervoxel_lr(cnt)
             with torch.no_grad():
-                model.density[cnt <= 2] = -100
+                model.sdf[cnt <= 2] = -100
         per_voxel_init()
 
     # GOGO
@@ -337,9 +336,9 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
     for global_step in trange(1+start, 1+cfg_train.N_iters):
 
         # renew occupancy grid
-        if model.mask_cache is not None and (global_step + 500) % 1000 == 0:
-            self_alpha = F.max_pool3d(model.activate_density(model.density), kernel_size=3, padding=1, stride=1)[0,0]
-            model.mask_cache.mask &= (self_alpha > model.fast_color_thres)
+        # if model.mask_cache is not None and (global_step + 500) % 1000 == 0:
+        #     self_alpha = F.max_pool3d(model.activate_density(model.density), kernel_size=3, padding=1, stride=1)[0,0]
+        #     model.mask_cache.mask &= (self_alpha > model.fast_color_thres)
 
         # progress scaling checkpoint
         if global_step in cfg_train.pg_scale:
@@ -352,7 +351,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             else:
                 raise NotImplementedError
             optimizer = utils.create_optimizer_or_freeze_model(model, cfg_train, global_step=0)
-            model.density.data.sub_(1)
+            model.sdf.data.sub_(1)
 
         # random sample rays
         if cfg_train.ray_sampler in ['flatten', 'in_maskcache']:
@@ -395,13 +394,13 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             loss += cfg_train.weight_rgbper * rgbper_loss
         loss.backward()
 
-        if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
-            if cfg_train.weight_tv_density>0:
-                model.density_total_variation_add_grad(
-                    cfg_train.weight_tv_density/len(rays_o), global_step<cfg_train.tv_dense_before)
-            if cfg_train.weight_tv_k0>0:
-                model.k0_total_variation_add_grad(
-                    cfg_train.weight_tv_k0/len(rays_o), global_step<cfg_train.tv_dense_before)
+        # if global_step<cfg_train.tv_before and global_step>cfg_train.tv_after and global_step%cfg_train.tv_every==0:
+        #     if cfg_train.weight_tv_density>0:
+        #         model.sdf_total_variation_add_grad(
+        #             cfg_train.weight_tv_density/len(rays_o), global_step<cfg_train.tv_dense_before)
+        #     if cfg_train.weight_tv_k0>0:
+        #         model.k0_total_variation_add_grad(
+        #             cfg_train.weight_tv_k0/len(rays_o), global_step<cfg_train.tv_dense_before)
 
         optimizer.step()
         psnr_lst.append(psnr.item())
