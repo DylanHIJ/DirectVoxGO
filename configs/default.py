@@ -14,7 +14,7 @@ data = dict(
     annot_path='',                # to support co3d
     split_path='',                # to support co3d
     sequence_name='',             # to support co3d
-    load2gpu_on_the_fly=False,    # do not load all images into gpu (to save gpu memory)
+    load2gpu_on_the_fly=True,     # do not load all images into gpu (to save gpu memory)
     testskip=1,                   # subsample testset to preview results
     white_bkgd=False,             # use white background (note that some dataset don't provide alpha and with blended bg color)
     half_res=False,               # [TODO]
@@ -32,7 +32,7 @@ data = dict(
 ''' Template of training options
 '''
 coarse_train = dict(
-    N_iters=5000,                 # number of optimization steps
+    N_iters=10000,                 # number of optimization steps
     N_rand=8192,                  # batch size (number of random rays per optimization step)
     lrate_density=1e-1,           # lr of density voxel grid
     lrate_k0=1e-1,                # lr of color/feature voxel grid
@@ -44,6 +44,7 @@ coarse_train = dict(
     weight_main=1.0,              # weight of photometric loss
     weight_entropy_last=0.01,     # weight of background entropy loss
     weight_rgbper=0.1,            # weight of per-point rgb loss
+    weight_depthper=0.2,          # weight of per-point depth loss
     tv_every=1,                   # count total variation loss every tv_every step
     tv_after=0,                   # count total variation loss from tv_from step
     tv_before=0,                  # count total variation before the given number of iterations
@@ -56,11 +57,12 @@ coarse_train = dict(
 
 fine_train = deepcopy(coarse_train)
 fine_train.update(dict(
-    N_iters=20000,
+    N_iters=50000,
     pervoxel_lr=False,
     ray_sampler='in_maskcache',
     weight_entropy_last=0.001,
     weight_rgbper=0.01,
+    weight_depthper=0.03,
     pg_scale=[1000, 2000, 3000, 4000],
     skip_zero_grad_fields=['density', 'k0'],
 ))
