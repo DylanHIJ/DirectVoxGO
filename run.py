@@ -414,13 +414,10 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             rgbper_loss = (rgbper * render_result['weights'].detach()).sum() / len(rays_o)
             loss += cfg_train.weight_rgbper * rgbper_loss
         if cfg_train.weight_depthper > 0:
-            # depthper = (torch.reshape(render_result['step_id'], (-1, 1)) - target_d[render_result['ray_id']]).sum(-1)
             render_depth = render_result['depth'] / torch.max(render_result['depth'])
             target_d = target_d.flatten()
             target_depth = target_d / torch.max(target_d)
-            # target_d_np = target_d.cpu().numpy()
             depth_mask = torch.where(target_depth > 0, torch.ones_like(target_depth), torch.zeros_like(target_depth))
-            
             num_pixel = len(depth_mask)
             num_valid = torch.count_nonzero(depth_mask)
             depth_valid_weight = num_pixel / (num_valid + 1e-5)

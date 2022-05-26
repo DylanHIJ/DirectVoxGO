@@ -370,7 +370,6 @@ class DirectVoxGO(torch.nn.Module):
             'raw_alpha': alpha,
             'raw_rgb': rgb,
             'ray_id': ray_id,
-            'step_id': step_id,
         })
 
         if render_kwargs.get('render_depth', False):
