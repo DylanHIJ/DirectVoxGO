@@ -423,7 +423,7 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
             
             num_pixel = len(depth_mask)
             num_valid = torch.count_nonzero(depth_mask)
-            depth_valid_weight = num_pixel / (num_valid + 1e-6)
+            depth_valid_weight = num_pixel / (num_valid + 1e-5)
             depthper = (render_depth*depth_mask - target_depth*depth_mask).pow(2).sum(-1) * depth_valid_weight
             depthper_loss = depthper.sum() / len(rays_o)
             loss += cfg_train.weight_depthper * depthper_loss
