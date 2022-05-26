@@ -63,6 +63,38 @@ def load_model(model_class, ckpt_path):
     model.load_state_dict(ckpt['model_state_dict'])
     return model
 
+''' Loss Functions
+'''
+
+img2mse = lambda x, y: torch.mean(torch.square(x - y))
+img2mae = lambda x, y: torch.mean(torch.abs(x - y))
+
+def compute_loss(prediction, target, loss_type='l2'):
+    if loss_type == 'l2':
+        return img2mse(prediction, target)
+    elif loss_type == 'l1':
+        return img2mae(prediction, target)
+    raise Exception('Unsupported loss type')
+
+def get_masks(z_vals, target_d, truncation):
+    front_mask = torch.where(z_vals < (target_d - truncation), torch.ones_like(z_vals), torch.zeros_like(z_vals))
+    back_mask = torch.where(z_vals > (target_d + truncation), torch.ones_like(z_vals), torch.zeros_like(z_vals))
+    depth_mask = torch.where(target_d > 0.0, torch.ones_like(target_d), torch.zeros_like(target_d))
+    sdf_mask = (1.0 - front_mask) * (1.0 - back_mask) * depth_mask
+
+    num_fs_samples = torch.count_nonzero(front_mask)
+    num_sdf_samples = torch.count_nonzero(sdf_mask)
+    num_samples = num_sdf_samples + num_fs_samples
+    fs_weight = 1.0 - num_fs_samples / num_samples
+    sdf_weight = 1.0 - num_sdf_samples / num_samples
+    return front_mask, sdf_mask, fs_weight, sdf_weight
+
+def get_sdf_loss(z_vals, target_d, predicted_sdf, truncation, loss_type='l2'):
+    front_mask, sdf_mask, fs_weight, sdf_weight = get_masks(z_vals, target_d, truncation)
+
+    fs_loss = compute_loss(predicted_sdf * front_mask, torch.ones_like(predicted_sdf) * front_mask, loss_type) * fs_weight
+    sdf_loss = compute_loss((z_vals + predicted_sdf * truncation) * sdf_mask, target_d * sdf_mask, loss_type) * sdf_weight
+    return fs_loss, sdf_loss
 
 ''' Evaluation metrics (ssim, lpips)
 '''

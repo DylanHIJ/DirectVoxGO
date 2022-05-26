@@ -309,6 +309,7 @@ class DirectVoxGO(torch.nn.Module):
 
         M = len(ray_pts)
         K = int(M / N)
+        z_vals = ((ray_pts.reshape((N, K, -1)) - rays_o[:, None, :]) / rays_d[:, None, :])[..., 0]
 
         def sdf2weights(sdf):
             """
@@ -328,7 +329,6 @@ class DirectVoxGO(torch.nn.Module):
             inds = torch.argmax(mask, axis=1)
             inds = inds[..., None]
 
-            z_vals = ray_pts.reshape((N, K, -1))[..., -1]
             z_min = torch.gather(z_vals, 1, inds)
             mask = torch.where(z_vals < z_min + sc_factor * truncation,
                     torch.ones_like(z_vals), torch.zeros_like(z_vals))
@@ -339,14 +339,6 @@ class DirectVoxGO(torch.nn.Module):
         sdf = self.grid_sampler(ray_pts, self.sdf)
         weights = sdf2weights(sdf)
         weights = weights.reshape((M))
-
-        if self.fast_color_thres > 0:
-            mask = (weights > self.fast_color_thres)
-            weights = weights[mask]
-            # alpha = alpha[mask]
-            ray_pts = ray_pts[mask]
-            ray_id = ray_id[mask]
-            step_id = step_id[mask]
 
         # query for color
         if not self.rgbnet_full_implicit:
@@ -379,16 +371,18 @@ class DirectVoxGO(torch.nn.Module):
                 out=torch.zeros([N, 3]),
                 reduce='sum')
         ret_dict.update({
-            'weights': weights,
-            'rgb_marched': rgb_marched,
+            'weights': weights, # [M]
+            'rgb_marched': rgb_marched, # [N, 3]
             'raw_rgb': rgb,
             'ray_id': ray_id,
+            'sdf': sdf.reshape((N, K)), # [N, K]
+            'z_vals': z_vals, # [N, K]
         })
 
         if render_kwargs.get('render_depth', False):
             with torch.no_grad():
                 depth = segment_coo(
-                        src=(weights * step_id),
+                        src=(weights * z_vals.reshape((M))),
                         index=ray_id,
                         out=torch.zeros([N]),
                         reduce='sum')
@@ -554,11 +548,12 @@ def get_rays_of_a_view(H, W, K, c2w, ndc, inverse_y, flip_x, flip_y, mode='cente
 
 
 @torch.no_grad()
-def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
+def get_training_rays(rgb_tr, d_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
     print('get_training_rays: start')
     assert len(np.unique(HW, axis=0)) == 1
     assert len(np.unique(Ks.reshape(len(Ks),-1), axis=0)) == 1
     assert len(rgb_tr) == len(train_poses) and len(rgb_tr) == len(Ks) and len(rgb_tr) == len(HW)
+    assert len(d_tr) == len(train_poses) and len(d_tr) == len(Ks) and len(d_tr) == len(HW)
     H, W = HW[0]
     K = Ks[0]
     eps_time = time.time()
@@ -575,29 +570,32 @@ def get_training_rays(rgb_tr, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_
         del rays_o, rays_d, viewdirs
     eps_time = time.time() - eps_time
     print('get_training_rays: finish (eps time:', eps_time, 'sec)')
-    return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
+    return rgb_tr, d_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
 
 
 @torch.no_grad()
-def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
+def get_training_rays_flatten(rgb_tr_ori, d_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y):
     print('get_training_rays_flatten: start')
     assert len(rgb_tr_ori) == len(train_poses) and len(rgb_tr_ori) == len(Ks) and len(rgb_tr_ori) == len(HW)
+    assert len(d_tr_ori) == len(train_poses) and len(d_tr_ori) == len(Ks) and len(d_tr_ori) == len(HW)
     eps_time = time.time()
     DEVICE = rgb_tr_ori[0].device
     N = sum(im.shape[0] * im.shape[1] for im in rgb_tr_ori)
     rgb_tr = torch.zeros([N,3], device=DEVICE)
+    d_tr = torch.zeros([N,1], device=DEVICE)
     rays_o_tr = torch.zeros_like(rgb_tr)
     rays_d_tr = torch.zeros_like(rgb_tr)
     viewdirs_tr = torch.zeros_like(rgb_tr)
     imsz = []
     top = 0
-    for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):
+    for c2w, img, depth, (H, W), K in zip(train_poses, rgb_tr_ori, d_tr_ori, HW, Ks):
         assert img.shape[:2] == (H, W)
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc,
                 inverse_y=inverse_y, flip_x=flip_x, flip_y=flip_y)
         n = H * W
         rgb_tr[top:top+n].copy_(img.flatten(0,1))
+        d_tr[top:top+n].copy_(depth.flatten(0,1))
         rays_o_tr[top:top+n].copy_(rays_o.flatten(0,1).to(DEVICE))
         rays_d_tr[top:top+n].copy_(rays_d.flatten(0,1).to(DEVICE))
         viewdirs_tr[top:top+n].copy_(viewdirs.flatten(0,1).to(DEVICE))
@@ -607,24 +605,26 @@ def get_training_rays_flatten(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, f
     assert top == N
     eps_time = time.time() - eps_time
     print('get_training_rays_flatten: finish (eps time:', eps_time, 'sec)')
-    return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
+    return rgb_tr, d_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
 
 
 @torch.no_grad()
-def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y, model, render_kwargs):
+def get_training_rays_in_maskcache_sampling(rgb_tr_ori, d_tr_ori, train_poses, HW, Ks, ndc, inverse_y, flip_x, flip_y, model, render_kwargs):
     print('get_training_rays_in_maskcache_sampling: start')
     assert len(rgb_tr_ori) == len(train_poses) and len(rgb_tr_ori) == len(Ks) and len(rgb_tr_ori) == len(HW)
+    assert len(d_tr_ori) == len(train_poses) and len(d_tr_ori) == len(Ks) and len(d_tr_ori) == len(HW)
     CHUNK = 64
     DEVICE = rgb_tr_ori[0].device
     eps_time = time.time()
     N = sum(im.shape[0] * im.shape[1] for im in rgb_tr_ori)
     rgb_tr = torch.zeros([N,3], device=DEVICE)
+    d_tr = torch.zeros([N,1], device=DEVICE)
     rays_o_tr = torch.zeros_like(rgb_tr)
     rays_d_tr = torch.zeros_like(rgb_tr)
     viewdirs_tr = torch.zeros_like(rgb_tr)
     imsz = []
     top = 0
-    for c2w, img, (H, W), K in zip(train_poses, rgb_tr_ori, HW, Ks):
+    for c2w, img, depth, (H, W), K in zip(train_poses, rgb_tr_ori, d_tr_ori, HW, Ks):
         assert img.shape[:2] == (H, W)
         rays_o, rays_d, viewdirs = get_rays_of_a_view(
                 H=H, W=W, K=K, c2w=c2w, ndc=ndc,
@@ -635,6 +635,7 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
                     rays_o=rays_o[i:i+CHUNK], rays_d=rays_d[i:i+CHUNK], **render_kwargs).to(DEVICE)
         n = mask.sum()
         rgb_tr[top:top+n].copy_(img[mask])
+        d_tr[top:top+n].copy_(depth[mask])
         rays_o_tr[top:top+n].copy_(rays_o[mask].to(DEVICE))
         rays_d_tr[top:top+n].copy_(rays_d[mask].to(DEVICE))
         viewdirs_tr[top:top+n].copy_(viewdirs[mask].to(DEVICE))
@@ -643,12 +644,13 @@ def get_training_rays_in_maskcache_sampling(rgb_tr_ori, train_poses, HW, Ks, ndc
 
     print('get_training_rays_in_maskcache_sampling: ratio', top / N)
     rgb_tr = rgb_tr[:top]
+    d_tr = d_tr[:top]
     rays_o_tr = rays_o_tr[:top]
     rays_d_tr = rays_d_tr[:top]
     viewdirs_tr = viewdirs_tr[:top]
     eps_time = time.time() - eps_time
     print('get_training_rays_in_maskcache_sampling: finish (eps time:', eps_time, 'sec)')
-    return rgb_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
+    return rgb_tr, d_tr, rays_o_tr, rays_d_tr, viewdirs_tr, imsz
 
 
 def batch_indices_generator(N, BS):
