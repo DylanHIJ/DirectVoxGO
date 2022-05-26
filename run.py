@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from lib import utils, dvgo, dmpigo
 from lib.load_data import load_data
-from lib.extract_mesh import extract_mesh
+# from lib.extract_mesh import extract_mesh
 
 
 def config_parser():
@@ -49,7 +49,7 @@ def config_parser():
     # logging/saving options
     parser.add_argument("--i_print",   type=int, default=500,
                         help='frequency of console printout and metric loggin')
-    parser.add_argument("--i_weights", type=int, default=100000,
+    parser.add_argument("--i_weights", type=int, default=10000,
                         help='frequency of weight ckpt saving')
     return parser
 
@@ -416,8 +416,16 @@ def scene_rep_reconstruction(args, cfg, cfg_model, cfg_train, xyz_min, xyz_max, 
         if cfg_train.weight_depthper > 0:
             # depthper = (torch.reshape(render_result['step_id'], (-1, 1)) - target_d[render_result['ray_id']]).sum(-1)
             render_depth = render_result['depth'] / torch.max(render_result['depth'])
+            target_d = target_d.flatten()
             target_depth = target_d / torch.max(target_d)
-            depthper = (render_depth - target_depth).pow(2).sum(-1)
+            # target_d_np = target_d.cpu().numpy()
+            depth_mask = torch.where(target_depth > 0, torch.ones_like(target_depth), torch.zeros_like(target_depth))
+            
+            num_pixel = len(depth_mask)
+            num_valid = torch.count_nonzero(depth_mask)
+            depth_valid_weight = num_pixel / (num_valid + 1e-5)
+
+            depthper = (render_depth*depth_mask - target_depth*depth_mask).pow(2).sum(-1) * depth_valid_weight
             depthper_loss = depthper.sum() / len(rays_o)
             loss += cfg_train.weight_depthper * depthper_loss
         loss.backward()
@@ -569,6 +577,12 @@ if __name__=='__main__':
         print('done')
         sys.exit()
 
+    # depths  = data_dict['depths'].cpu().numpy()
+    # for i in trange(len(depths)):
+    #     depth8 = utils.to8b(1 - depths[i] / np.max(depths))
+    #     filename = os.path.join('tmp', 'depth{:03d}.png'.format(i))
+    #     imageio.imwrite(filename, depth8)
+    # exit(0)
     # train
     if not args.render_only:
         train(args, cfg, data_dict)
@@ -621,7 +635,7 @@ if __name__=='__main__':
         testsavedir = os.path.join(cfg.basedir, cfg.expname, f'render_test_{ckpt_name}')
         os.makedirs(testsavedir, exist_ok=True)
 
-        extract_mesh(savedir=testsavedir, **render_viewpoints_kwargs)
+        # extract_mesh(savedir=testsavedir, **render_viewpoints_kwargs)
 
         rgbs, depths = render_viewpoints(
                 render_poses=data_dict['poses'][data_dict['i_test']],

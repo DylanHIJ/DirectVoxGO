@@ -374,12 +374,12 @@ class DirectVoxGO(torch.nn.Module):
         })
 
         if render_kwargs.get('render_depth', False):
-            with torch.no_grad():
-                depth = segment_coo(
-                        src=(weights * step_id),
-                        index=ray_id,
-                        out=torch.zeros([N]),
-                        reduce='sum')
+            # with torch.no_grad():
+            depth = segment_coo(
+                    src=(weights * step_id),
+                    index=ray_id,
+                    out=torch.zeros([N]),
+                    reduce='sum')
             ret_dict.update({'depth': depth})
 
         return ret_dict
