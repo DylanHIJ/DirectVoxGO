@@ -43,9 +43,10 @@ coarse_train = dict(
     ray_sampler='random',         # ray sampling strategies
     weight_main=1.0,              # weight of photometric loss
     weight_entropy_last=0,        # weight of background entropy loss
-    weight_freespace=100,         # weight of freespace loss
-    weight_truncation=60000,      # weight of truncation loss
+    weight_freespace=1e4,         # weight of freespace loss
+    weight_truncation=1e5,        # weight of truncation loss
     weight_rgbper=0.1,            # weight of per-point rgb loss
+    weight_depthper=0.2,            # weight of per-point depth loss
     tv_every=1,                   # count total variation loss every tv_every step
     tv_after=0,                   # count total variation loss from tv_from step
     tv_before=0,                  # count total variation before the given number of iterations
@@ -62,7 +63,9 @@ fine_train.update(dict(
     pervoxel_lr=False,
     ray_sampler='in_maskcache',
     weight_entropy_last=0,
+    weight_freespace=1e3,
     weight_rgbper=0.01,
+    weight_depthper=0.03,
     pg_scale=[1000, 2000, 3000, 4000],
     skip_zero_grad_fields=['sdf', 'k0'],
 ))
