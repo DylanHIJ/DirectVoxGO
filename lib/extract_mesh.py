@@ -67,17 +67,8 @@ def extract_mesh(model, ndc, render_kwargs, voxel_size=0.01, savedir=None):
         offset = np.array([tx[0], ty[0], tz[0]])
         vertices[:, :3] = scale[np.newaxis, :] * vertices[:, :3] + offset
 
-        # Transform to metric units
-        # vertices[:, :3] = vertices[:, :3] / args.sc_factor - args.translation
-
         mesh = trimesh.Trimesh(vertices, triangles, process=False)
 
-        # Transform the mesh to Scannet's coordinate system
-        gl_to_scannet = np.array([[1, 0, 0, 0],
-                                [0, 0, -1, 0],
-                                [0, 1, 0, 0],
-                                [0, 0, 0, 1]]).astype(np.float32).reshape([4, 4])
-        mesh.apply_transform(gl_to_scannet)
         mesh_savepath = os.path.join(savedir, f"mesh_{iso_level}.ply")
         mesh.export(mesh_savepath)
 
