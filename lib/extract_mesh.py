@@ -38,38 +38,42 @@ def extract_iso_level(density):
 
     return iso_value
 
+@torch.no_grad()
 def extract_mesh(model, ndc, render_kwargs, voxel_size=0.01, savedir=None):
     print("extract_mesh started")
-    # voxel_size *= 0.4
     tx, ty, tz = get_scene_bounds(model.xyz_min, model.xyz_max, voxel_size, True)
 
     query_pts = np.stack(np.meshgrid(tx, ty, tz, indexing='ij'), -1).astype(np.float32)
     print(f"shape of query_pts: {query_pts.shape}")
     shape = query_pts.shape
     flat_query_pts = query_pts.reshape([-1, 3])
+    N = flat_query_pts.shape[0]
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     flat_query_pts = torch.from_numpy(flat_query_pts).to(device)
 
-    ret = model.grid_sampler(flat_query_pts, model.density)
-    density = np.reshape(ret.detach().cpu().numpy(), shape[:-1])
+    chunk = 1024 * 64
+    ret_batches = [
+        model.grid_sampler(flat_query_pts[i:min(i+chunk, N)], model.sdf).detach().cpu().numpy()
+        for i in range(0, N, chunk)
+    ]
+    ret = np.concatenate(ret_batches, 0)
+    sdf = np.reshape(ret, shape[:-1])
 
-    tmp = extract_iso_level(density)
+    iso_level = 0
+    vertices, triangles = mcubes.marching_cubes(sdf, iso_level)
 
-    for iso_level in range(16, 0, -1):
-        vertices, triangles = mcubes.marching_cubes(density, iso_level)
+    # normalize vertex positions
+    vertices[:, :3] /= np.array([[tx.shape[0] - 1, ty.shape[0] - 1, tz.shape[0] - 1]])
 
-        # normalize vertex positions
-        vertices[:, :3] /= np.array([[tx.shape[0] - 1, ty.shape[0] - 1, tz.shape[0] - 1]])
+    # Rescale and translate
+    scale = np.array([tx[-1] - tx[0], ty[-1] - ty[0], tz[-1] - tz[0]])
+    offset = np.array([tx[0], ty[0], tz[0]])
+    vertices[:, :3] = scale[np.newaxis, :] * vertices[:, :3] + offset
 
-        # Rescale and translate
-        scale = np.array([tx[-1] - tx[0], ty[-1] - ty[0], tz[-1] - tz[0]])
-        offset = np.array([tx[0], ty[0], tz[0]])
-        vertices[:, :3] = scale[np.newaxis, :] * vertices[:, :3] + offset
+    mesh = trimesh.Trimesh(vertices, triangles, process=False)
 
-        mesh = trimesh.Trimesh(vertices, triangles, process=False)
-
-        mesh_savepath = os.path.join(savedir, f"mesh_{iso_level}.ply")
-        mesh.export(mesh_savepath)
+    mesh_savepath = os.path.join(savedir, f"mesh_{iso_level}.ply")
+    mesh.export(mesh_savepath)
 
     print("extract_mesh ended")

@@ -14,7 +14,7 @@ data = dict(
     annot_path='',                # to support co3d
     split_path='',                # to support co3d
     sequence_name='',             # to support co3d
-    load2gpu_on_the_fly=False,    # do not load all images into gpu (to save gpu memory)
+    load2gpu_on_the_fly=True,     # do not load all images into gpu (to save gpu memory)
     testskip=1,                   # subsample testset to preview results
     white_bkgd=False,             # use white background (note that some dataset don't provide alpha and with blended bg color)
     half_res=False,               # [TODO]
@@ -34,7 +34,7 @@ data = dict(
 coarse_train = dict(
     N_iters=5000,                 # number of optimization steps
     N_rand=8192,                  # batch size (number of random rays per optimization step)
-    lrate_density=1e-1,           # lr of density voxel grid
+    lrate_sdf=1e-1,               # lr of sdf voxel grid
     lrate_k0=1e-1,                # lr of color/feature voxel grid
     lrate_rgbnet=1e-3,            # lr of the mlp to preduct view-dependent color
     lrate_decay=20,               # lr decay by 0.1 after every lrate_decay*1000 steps
@@ -42,8 +42,11 @@ coarse_train = dict(
     pervoxel_lr_downrate=1,       # downsampled image for computing view-count-based lr
     ray_sampler='random',         # ray sampling strategies
     weight_main=1.0,              # weight of photometric loss
-    weight_entropy_last=0.01,     # weight of background entropy loss
+    weight_entropy_last=0,        # weight of background entropy loss
+    weight_freespace=1e2,         # weight of freespace loss
+    weight_truncation=6e4,        # weight of truncation loss
     weight_rgbper=0.1,            # weight of per-point rgb loss
+    weight_depthper=0,          # weight of per-point depth loss
     tv_every=1,                   # count total variation loss every tv_every step
     tv_after=0,                   # count total variation loss from tv_from step
     tv_before=0,                  # count total variation before the given number of iterations
@@ -59,10 +62,11 @@ fine_train.update(dict(
     N_iters=20000,
     pervoxel_lr=False,
     ray_sampler='in_maskcache',
-    weight_entropy_last=0.001,
+    weight_entropy_last=0,
     weight_rgbper=0.01,
+    weight_depthper=0,
     pg_scale=[1000, 2000, 3000, 4000],
-    skip_zero_grad_fields=['density', 'k0'],
+    skip_zero_grad_fields=['sdf', 'k0'],
 ))
 
 ''' Template of model and rendering options

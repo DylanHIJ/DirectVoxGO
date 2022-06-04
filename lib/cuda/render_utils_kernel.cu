@@ -195,9 +195,11 @@ std::vector<torch::Tensor> sample_pts_on_rays_cuda(
   const int n_rays = rays_o.size(0);
 
   // Compute ray-bbox intersection
-  auto t_minmax = infer_t_minmax_cuda(rays_o, rays_d, xyz_min, xyz_max, near, far);
-  auto t_min = t_minmax[0];
-  auto t_max = t_minmax[1];
+  // auto t_minmax = infer_t_minmax_cuda(rays_o, rays_d, xyz_min, xyz_max, near, far);
+  // auto t_min = t_minmax[0];
+  // auto t_max = t_minmax[1];
+  auto t_min = torch::full({n_rays}, near, rays_o.options());
+  auto t_max = torch::full({n_rays}, far, rays_o.options());
 
   // Compute the number of points required.
   // Assign ray index and step index to each.
