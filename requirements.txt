@@ -6,4 +6,5 @@ mmcv
 imageio
 imageio-ffmpeg
 opencv-python
-
+PyMCubes
+trimesh
