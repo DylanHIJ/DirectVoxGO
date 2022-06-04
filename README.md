@@ -14,14 +14,14 @@ This work reconstructs a scene representation from a set of calibrated RGB-D ima
 
 (Image Credit to [Direct Voxel Grid Optimization: Super-fast Convergence for Radiance Fields Reconstruction.](https://arxiv.org/pdf/2111.11215.pdf))
 
-### Installation
+## Installation
 
-```
+```bash
 pip install -r requirements.txt
 ```
 [Pytorch](https://pytorch.org/) and [torch_scatter](https://github.com/rusty1s/pytorch_scatter) installation is machine dependent, please install the correct version for your machine.
 
-## Dataset
+##Dataset
 
 We use the data provided by [Neural RGB-D surface reconstruction](https://dazinovic.github.io/neural-rgbd-surface-reconstruction/), which contains RGB-D images, ground-truth poses and camera intrinsics for 9 different scenes. The full dataset can be downloaded from [neural_rgbd_data.zip](http://kaldir.vc.in.tum.de/neural_rgbd/neural_rgbd_data.zip).
 
